@@ -23,6 +23,7 @@ with open(os.devnull, 'w') as f:
 #---------------#
 EVENT_DATA_URL = "https://127.0.0.1:2999/liveclientdata/eventdata"
 PLAYER_SCORE_URL = "https://127.0.0.1:2999/liveclientdata/playerscores?summonerName="
+ALL_PLAYERS_URL = "https://127.0.0.1:2999/liveclientdata/playerlist"
 CONFIG_FILE = "config.ini"
 
 # Tracks stats of player
@@ -33,6 +34,8 @@ class Player:
         self.deaths = 0
         self.assists = 0
         self.creepScore = 0
+
+        self.isDead = False
 
     # call the riot api and get stats of the player
     def _get_stats(self):
@@ -48,6 +51,18 @@ class Player:
         self.deaths = int(stats["deaths"])
         self.assists = int(stats["assists"])
         self.creepScore = int(stats["creepScore"])
+
+    def _get_dead_status(self):
+        try:
+            result = requests.get(ALL_PLAYERS_URL, verify=False).json()
+            for key in result:
+                if (result[key]["summonerName"] == self.summonerName):
+                    if (result[key]["isDead"] == True):
+                        return True
+                    else:
+                        return False
+        except Exception as e:
+            return False
 
     # sets the cached stats to what is currently in game
     def refresh(self):
@@ -83,6 +98,16 @@ class Player:
             self.creepScore = creepScore
             event.call_event("onCreepKilled")
 
+        # respawn
+        dead = self._get_dead_status()
+        if not (dead):
+            if (self.isDead == True):
+                event.call_event("onRespawn")
+                self.isDead = False
+        else:
+            if (self.isDead == False):
+                self.isDead = True
+
     # sets all stats back to 0
     def reset(self):
         self.kills = 0
@@ -102,21 +127,27 @@ class EventHandler:
         if (self.config.get('Events', 'kills') != "True"):
             return
 
-        self._play_sound(self.root.config.get('Sounds', 'onKillSound'))
+        self._play_sound(self.config.get('Sounds', 'onKillSound'))
 
     # called when dying
     def on_death(self):
         if (self.config.get('Events', 'deaths') != "True"):
             return
 
-        self._play_sound(self.root.config.get('Sounds', 'onDeathSound'))
+        self._play_sound(self.config.get('Sounds', 'onDeathSound'))
+
+    def on_respawn(self):
+        if (self.config.get('Events', 'respawn') != "True"):
+            return
+
+        self._play_sound(self.config.get('Sounds', 'onRespawnSound'))
 
     # called when getting an assist
     def on_assist(self):
         if (self.config.get('Events', 'assists') != "True"):
             return
 
-        self._play_sound(self.root.config.get('Sounds', 'onAssistSound'))
+        self._play_sound(self.config.get('Sounds', 'onAssistSound'))
 
     # called when the cs of player increases
     def on_creep_kill(self):
@@ -190,6 +221,7 @@ class Glory:
             self.events.subscribe("onCreepKilled", self.event_handler.on_creep_kill)
             self.events.subscribe("onGameJoin", self.event_handler.on_game_join)
             self.events.subscribe("onGameLeave", self.event_handler.on_game_leave)
+            self.events.subscribe("onRespawn", self.event_handler.on_respawn)
 
             # app variables
             self.in_game = False
